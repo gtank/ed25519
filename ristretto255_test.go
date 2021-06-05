@@ -5,67 +5,11 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"testing"
 
-	"github.com/gtank/ristretto255/internal/radix51"
+	"filippo.io/edwards25519/field"
 )
-
-func assertFeEqual(value, expect *radix51.FieldElement) {
-	if value.Equal(expect) == 1 {
-		return
-	} else {
-		panic("failed equality assertion")
-	}
-}
-
-type sqrtRatioTest struct {
-	u, v     *radix51.FieldElement
-	sqrt     *radix51.FieldElement
-	choice   int
-	negative int
-}
-
-func TestSqrtRatioM1(t *testing.T) {
-	// These tests can be found in curve25519-dalek's 'field.rs'
-	var (
-		zero, one = radix51.Zero, radix51.One
-
-		// Two is nonsquare in our field, 4 is square
-		two  = new(radix51.FieldElement).Add(one, one)
-		four = new(radix51.FieldElement).Add(two, two)
-
-		// 2*i
-		twoTimesSqrtM1 = new(radix51.FieldElement).Mul(two, sqrtM1)
-
-		sqrt2i = fieldElementFromDecimal(
-			"38214883241950591754978413199355411911188925816896391856984770930832735035196")
-
-		invSqrt4 = fieldElementFromDecimal(
-			"28948022309329048855892746252171976963317496166410141009864396001978282409974")
-	)
-
-	// Check the construction of those magic numbers.
-	assertFeEqual(new(radix51.FieldElement).Mul(sqrt2i, sqrt2i), twoTimesSqrtM1)
-	assertFeEqual(new(radix51.FieldElement).Mul(new(radix51.FieldElement).Square(invSqrt4), four), one)
-
-	var tests = []sqrtRatioTest{
-		{u: zero, v: zero, sqrt: zero, choice: 1, negative: 0},
-		{u: zero, v: one, sqrt: zero, choice: 1, negative: 0},
-		{u: one, v: zero, sqrt: zero, choice: 0, negative: 0},
-		{u: two, v: one, sqrt: sqrt2i, choice: 0, negative: 0},
-		{u: four, v: one, sqrt: two, choice: 1, negative: 0},
-		{u: one, v: four, sqrt: invSqrt4, choice: 1, negative: 0},
-	}
-
-	for idx, tt := range tests {
-		sqrt := new(radix51.FieldElement)
-		choice := feSqrtRatio(sqrt, tt.u, tt.v)
-		if choice != tt.choice || sqrt.Equal(tt.sqrt) != 1 || sqrt.IsNegative() != tt.negative {
-			t.Errorf("Failed test %d", idx)
-			t.Logf("Got {u: %v, v: %v, sqrt: %v, choice: %d, neg: %d}", tt.u, tt.v, sqrt, choice, sqrt.IsNegative())
-		}
-	}
-}
 
 // The encoding of the canonical generator.
 var compressedRistrettoBasepoint, _ = hex.DecodeString("e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76")
@@ -274,7 +218,7 @@ func TestMarshalScalar(t *testing.T) {
 	x := new(Scalar)
 	// generate an arbitrary scalar
 	xbytes := sha512.Sum512([]byte("Hello World"))
-	x.FromUniformBytes(xbytes[:])
+	x.SetUniformBytes(xbytes[:])
 	text, err := json.Marshal(x)
 	if err != nil {
 		t.Fatalf("Could not marshal json: %v", err)
@@ -336,10 +280,10 @@ func TestScalarSet(t *testing.T) {
 	scOne := make([]byte, 32)
 	scOne[0] = 0x01
 
-	sc1, sc2 := NewScalar(), NewScalar().Zero()
+	sc1, sc2 := NewScalar(), NewScalar()
 
 	// sc1 <- 1
-	sc1.Decode(scOne)
+	sc1.SetCanonicalBytes(scOne)
 
 	// 1 != 0
 	if sc1.Equal(sc2) == 1 {
@@ -360,5 +304,47 @@ func TestScalarSet(t *testing.T) {
 	// 2 != 1
 	if sc1.Equal(sc2) == 1 {
 		t.Error("shouldn't have changed")
+	}
+}
+
+func TestConstants(t *testing.T) {
+	// From draft-hdevalence-cfrg-ristretto-01, Section 3.1.
+	t.Run("d", func(t *testing.T) {
+		testConstant(t, d,
+			"37095705934669439343138083508754565189542113879843219016388785533085940283555")
+	})
+	t.Run("sqrtM1", func(t *testing.T) {
+		testConstant(t, sqrtM1,
+			"19681161376707505956807079304988542015446066515923890162744021073123829784752")
+	})
+	t.Run("sqrtADMinusOne", func(t *testing.T) {
+		testConstant(t, sqrtADMinusOne,
+			"25063068953384623474111414158702152701244531502492656460079210482610430750235")
+	})
+	t.Run("invSqrtAMinusD", func(t *testing.T) {
+		testConstant(t, invSqrtAMinusD,
+			"54469307008909316920995813868745141605393597292927456921205312896311721017578")
+	})
+	t.Run("oneMinusDSQ", func(t *testing.T) {
+		testConstant(t, oneMinusDSQ,
+			"1159843021668779879193775521855586647937357759715417654439879720876111806838")
+	})
+	t.Run("dMinusOneSQ", func(t *testing.T) {
+		testConstant(t, dMinusOneSQ,
+			"40440834346308536858101042469323190826248399146238708352240133220865137265952")
+	})
+}
+
+func testConstant(t *testing.T, f *field.Element, decimal string) {
+	b, ok := new(big.Int).SetString(decimal, 10)
+	if !ok {
+		t.Fatal("invalid decimal")
+	}
+	buf := b.FillBytes(make([]byte, 32))
+	for i := 0; i < len(buf)/2; i++ {
+		buf[i], buf[len(buf)-i-1] = buf[len(buf)-i-1], buf[i]
+	}
+	if !bytes.Equal(f.Bytes(), buf) {
+		t.Errorf("expected %x", buf)
 	}
 }
