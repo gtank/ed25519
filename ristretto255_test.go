@@ -307,8 +307,8 @@ func TestMarshalElement(t *testing.T) {
 func TestElementSet(t *testing.T) {
 	// Test this, because the internal point type being hard-copyable isn't part of the spec.
 
-	el1 := NewElement().Zero()
-	el2 := NewElement().Base()
+	el1 := NewIdentityElement()
+	el2 := NewGeneratorElement()
 
 	if el1.Equal(el2) == 1 {
 		t.Error("shouldn't be the same")

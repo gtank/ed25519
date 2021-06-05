@@ -6,6 +6,7 @@ package ristretto255
 
 import (
 	"encoding/base64"
+	"errors"
 
 	"github.com/gtank/ristretto255/internal/scalar"
 )
@@ -63,20 +64,56 @@ func (s *Scalar) Invert(x *Scalar) *Scalar {
 
 // FromUniformBytes sets s to an uniformly distributed value given 64 uniformly
 // distributed random bytes.
+//
+// Deprecated: use SetUniformBytes. This API will be removed before v1.0.0.
 func (s *Scalar) FromUniformBytes(x []byte) *Scalar {
-	s.s.FromUniformBytes(x)
+	if _, err := s.SetUniformBytes(x); err != nil {
+		panic(err.Error())
+	}
 	return s
+}
+
+// SetUniformBytes sets s to an uniformly distributed value given 64 uniformly
+// distributed random bytes.
+func (s *Scalar) SetUniformBytes(x []byte) (*Scalar, error) {
+	if len(x) != 64 {
+		return nil, errors.New("ristretto255: SetUniformBytes input is not 64 bytes long")
+	}
+	s.s.FromUniformBytes(x)
+	return s, nil
 }
 
 // Decode sets s = x, where x is a 32 bytes little-endian encoding of s. If x is
 // not a canonical encoding of s, Decode returns an error and the receiver is
 // unchanged.
+//
+// Deprecated: use SetCanonicalBytes. This API will be removed before v1.0.0.
 func (s *Scalar) Decode(x []byte) error {
-	return s.s.FromCanonicalBytes(x)
+	_, err := s.SetCanonicalBytes(x)
+	return err
+}
+
+// SetCanonicalBytes sets s = x, where x is a 32 bytes little-endian encoding of
+// s. If x is not a canonical encoding of s, SetCanonicalBytes returns nil and
+// an error and the receiver is unchanged.
+func (s *Scalar) SetCanonicalBytes(x []byte) (*Scalar, error) {
+	if err := s.s.FromCanonicalBytes(x); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // Encode appends a 32 bytes little-endian encoding of s to b.
+//
+// Deprecated: use Bytes. This API will be removed before v1.0.0.
 func (s *Scalar) Encode(b []byte) []byte {
+	return s.s.Bytes(b)
+}
+
+// Bytes returns the 32 bytes little-endian encoding of s.
+func (s *Scalar) Bytes() []byte {
+	// Bytes is small, so the allocation happens on the stack of the caller.
+	b := make([]byte, 0, 32)
 	return s.s.Bytes(b)
 }
 
